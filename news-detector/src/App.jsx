@@ -8,6 +8,14 @@ import { useState, useEffect, useRef, useCallback } from "react";
      html, body, #root { width: 100%; min-height: 100vh; overflow-x: hidden; }
 ══════════════════════════════════════════════════════════════════ */
 
+/* ══════════════════════════════════════════════════════════════
+   ▶ VERCEL DEPLOYMENT — NO CHANGES NEEDED HERE
+   This points to /api/proxy which Vercel serves automatically.
+   Just deploy to Vercel and add ANTHROPIC_API_KEY env variable.
+   See SETUP.md for full instructions (3 minutes).
+══════════════════════════════════════════════════════════════ */
+const PROXY_URL = "/api/proxy";
+
 /* ── Palette ─────────────────────────────────────────────────── */
 const C = {
   bg:"#04060f", bg1:"#080c1a", bg2:"#0c1120", bg3:"#111726",
@@ -590,7 +598,7 @@ ${raw}
 
     try {
       /* Pass 1 */
-      const r1 = await fetch("https://api.anthropic.com/v1/messages", {
+      const r1 = await fetch(PROXY_URL, {
         method:"POST", headers:{ "Content-Type":"application/json" },
         body:JSON.stringify({
           model:"claude-sonnet-4-20250514", max_tokens:4096, system:SYS,
@@ -612,7 +620,7 @@ ${raw}
       /* Pass 2 — handle tool_use midpoint OR end_turn with no parseable JSON */
       if (!parsed && (d1.stop_reason === "tool_use" || d1.stop_reason === "end_turn")) {
         const toolBlocks = blocks1.filter(b => b.type === "tool_use");
-        const r2 = await fetch("https://api.anthropic.com/v1/messages", {
+        const r2 = await fetch(PROXY_URL, {
           method:"POST", headers:{ "Content-Type":"application/json" },
           body:JSON.stringify({
             model:"claude-sonnet-4-20250514", max_tokens:4096, system:SYS,
@@ -643,7 +651,17 @@ ${raw}
       }, ...h.slice(0,19)]);
 
     } catch(e) {
-      setError(e.message || "Something went wrong. Please try again.");
+      let msg = e.message || "Something went wrong. Please try again.";
+      if (msg.includes("Failed to fetch") || msg.includes("NetworkError") || msg.includes("CORS")) {
+        msg = "Connection failed. Check that your proxy URL is set correctly in veridect.jsx (PROXY_URL constant at the top of the file).";
+      } else if (msg.includes("401") || msg.includes("invalid_api_key") || msg.includes("authentication")) {
+        msg = "Invalid API key. Please check your key at console.anthropic.com — it should start with sk-ant-api03-";
+      } else if (msg.includes("429") || msg.includes("rate_limit")) {
+        msg = "Rate limit hit. Please wait 30 seconds and try again, or check your usage limits at console.anthropic.com";
+      } else if (msg.includes("insufficient_quota") || msg.includes("credit")) {
+        msg = "Insufficient API credits. Please add credits at console.anthropic.com/billing";
+      }
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -738,6 +756,8 @@ ${raw}
         <div style={{ height:1, background:`linear-gradient(90deg,transparent,${C.cyan}44,transparent)`,
           marginBottom:24, animation:"glowLine 3s ease infinite" }} />
 
+
+
         {/* ── Input Card ──────────────────────────────────────────── */}
         <div style={{ background:C.bg2, border:`1px solid ${C.line}`, borderRadius:14,
           padding:20, marginBottom:14 }}>
@@ -785,6 +805,22 @@ ${raw}
             </div>
           </div>
 
+          {/* proxy not configured warning */}
+          {false /* Vercel proxy configured */ && (
+            <div style={{ padding:"14px 16px", marginBottom:14,
+              background:"rgba(255,56,96,0.08)", border:"1px solid rgba(255,56,96,0.35)",
+              borderRadius:10 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:C.red, marginBottom:6,
+                fontFamily:"'Chakra Petch',sans-serif" }}>⚠ Proxy URL Not Configured</div>
+              <div style={{ fontSize:11.5, color:C.sub, lineHeight:1.8,
+                fontFamily:"'IBM Plex Mono',monospace" }}>
+                To use this app, deploy the Cloudflare Worker and update{" "}
+                <span style={{ color:C.cyan }}>PROXY_URL</span> in veridect.jsx.<br/>
+                See <span style={{ color:C.amber }}>cloudflare-worker.js</span> for step-by-step instructions (takes ~2 minutes).
+              </div>
+            </div>
+          )}
+
           {/* live notice */}
           <div style={{ display:"flex", gap:10, padding:"10px 14px",
             background:`${C.cyan}08`, border:`1px solid ${C.cyan}22`,
@@ -818,7 +854,9 @@ ${raw}
                 </svg>
                 Searching Web &amp; Analysing…
               </span>
-            ) : "🌐  Check Facts  ·  Ctrl+Enter"}
+            ) : false /* Vercel proxy configured */
+              ? "⚠ Set PROXY_URL in veridect.jsx first"
+              : "🌐  Check Facts  ·  Ctrl+Enter"}
           </button>
         </div>
 
